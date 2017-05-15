@@ -1,0 +1,905 @@
+﻿<html>
+<body>
+<h3 id="tips" style="color:#B0B0B0; z-index:3;position:absolute; left:25px;bottom:0px;">norm mode</h3>
+<h3 id="tips" style="color:#B0B0B0; z-index:3;position:absolute; left:25px;bottom:25px;">help : alt+h</h3>
+<div id="myDiagramDiv" style="z-index:1;border:1px #ccc solid;position:absolute; top:0px; left:0px; right:405px; bottom:0px;background-color: #E6E6E6;"></div>
+<div id="jsonEditorDiv" style="border:1px #ccc solid;width:400px;background-color: #E6E6E6;position:absolute; right:0px; bottom:0px;top: 0px;"></div>
+<link href="./jsoneditor.css" rel="stylesheet" type="text/css">
+<script src="./fileSaver.js"></script>
+<script src="./jsoneditor.js"></script>
+
+<script src="./notie.js"></script>
+<link href="./notie.css" rel="stylesheet" type="text/css">
+<script src="./go.js"></script>
+<script>
+    let globalCallbacksText = `{"enter":[],"leave":[],"before":[],"after":[]}`;
+
+    let modesArray = ['code', 'form', 'text', 'tree', 'view'];
+    let expandableArray = ['tree','view','form'];
+    var container = document.getElementById("jsonEditorDiv");
+    var options = {
+    sortObjectKeys:false,
+    mode: 'tree',
+    modes: modesArray, // allowed modes
+    onError: function (err) {
+      notie.alert({type:"error",text:err,stay:true});
+    },
+    onModeChange:function(){
+        expandJson();
+    },
+    onEditable: function(node){
+        if(node.field === "enter" ||node.field === "leave" ||node.field === "before" ||node.field === "after")
+        return {field:false,value:true};
+        return true;
+    }
+    };
+    var editor = new JSONEditor(container,options);
+    editor.setText(globalCallbacksText);
+    let expandJson = function(){
+            let currentMode = editor.getMode();
+            if(expandableArray.some((value)=>{return value === currentMode}))
+            editor.expandAll();
+    }
+    expandJson();
+
+
+    var $ = go.GraphObject.make;  // for conciseness in defining templates
+    var myDiagram =
+      $(go.Diagram, "myDiagramDiv",  // must name or refer to the DIV HTML element
+        {
+          // start everything in the middle of the viewport
+          initialContentAlignment: go.Spot.Center,
+          // have mouse wheel events zoom in and out instead of scroll up and down
+          "toolManager.mouseWheelBehavior": go.ToolManager.WheelZoom,
+          // support double-click in background creating a new node
+          "clickCreatingTool.archetypeNodeData": { text: "state",isInit: false},
+          // enable undo & redo
+          "undoManager.isEnabled": true,
+          //"toolManager.linkingTool.isEnabled":false,
+        });
+    myDiagram.toolManager.linkingTool.isEnabled = false;
+    myDiagram.scrollMode = go.Diagram.InfiniteScroll;
+
+    document.addEventListener("keydown",function(e){
+        if(e.key.toLowerCase() == 'q' && e.altKey){
+        myDiagram.toolManager.linkingTool.isEnabled = !myDiagram.toolManager.linkingTool.isEnabled;
+        document.getElementById("tips").innerHTML = myDiagram.toolManager.linkingTool.isEnabled ? "link mode":"norm mode";
+    }
+    }.bind(this));
+
+    document.addEventListener("keydown",function(e){
+         if( e.key.toLowerCase() == 's' && e.altKey){
+             exportSelect();
+         }
+    });
+
+    document.addEventListener("keydown",function(e){
+         if( e.key.toLowerCase() == 'h' && e.altKey){
+             getHelp();
+         }
+    });
+
+    document.addEventListener("keydown",function(e){
+        if( e.key.toLowerCase() == 'c' && e.altKey){
+            if(editKey !== null){
+                let node = myDiagram.findNodeForKey(editKey);
+                if(node){
+                    myDiagram.model.startTransaction("change isInit");
+                    myDiagram.model.setDataProperty(node.data, "isInit", !node.data.isInit);
+                    myDiagram.model.commitTransaction("change isInit");
+                }
+            }
+            if(oldInitialStateKey!== null && oldInitialStateKey !== editKey){
+                let node = myDiagram.findNodeForKey(oldInitialStateKey);
+                if(node){
+                    myDiagram.model.startTransaction("change isInit");
+                    myDiagram.model.setDataProperty(node.data, "isInit", false);
+                    myDiagram.model.commitTransaction("change isInit");
+                }
+            }
+            oldInitialStateKey = editKey;
+        }
+    })
+
+    var editKey = null;
+    var selectLink = false;
+    var linkData = null;
+    var multiSelect = false;
+
+    var oldInitialStateKey = null;
+
+    myDiagram.addDiagramListener("ChangedSelection",function(e){
+        if(editKey){  
+          let node = myDiagram.findNodeForKey(editKey);
+          if(node){
+            myDiagram.model.startTransaction("change callbacks");
+            myDiagram.model.setDataProperty(node.data, "callbacks", editor.getText());
+            myDiagram.model.commitTransaction("change callbacks");
+          }
+        }
+        if(selectLink){
+            let link = myDiagram.findLinkForData(linkData);
+            if(link){
+                 myDiagram.model.startTransaction("change callbacks");
+                myDiagram.model.setDataProperty(link.data, "callbacks", editor.getText());
+                myDiagram.model.commitTransaction("change callbacks");
+            }
+        }if(!editKey && !selectLink && !multiSelect){
+            globalCallbacksText = editor.getText();
+        }
+        let selection = e.diagram.selection;
+        let count = selection.count;
+        if(count === 1){
+          let obj = selection.first();
+          editKey = obj.data.key;
+          if(editKey) {
+          //document.getElementById("txt").value = "";
+          //Editor.log(obj.data.parameter);
+          //editor.set(JSON.parse(obj.data.paramter));
+            selectLink = false;
+            multiSelect = false;
+            editor.setText(obj.data.callbacks || '{"enter":[],"leave":[]}');
+            expandJson();
+          }else {
+              // this is link
+              selectLink = true;
+              multiSelect = false;
+              editor.setText(obj.data.callbacks || '{"before":[],"after":[]}');
+              linkData = obj.data;
+              expandJson();
+          }
+        }else if(count === 0){
+          editKey = null;
+          selectLink = false;
+           multiSelect = false;
+          editor.setText(globalCallbacksText);
+         expandJson();
+        }else if(count >= 2){
+            multiSelect = true;
+        }
+        //editor.expandAll();
+    });
+    
+
+    // define the Node template
+    myDiagram.nodeTemplate =
+      $(go.Node, "Auto",
+        new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
+        // define the node's outer shape, which will surround the TextBlock
+        $(go.Shape, "RoundedRectangle",
+          {
+            parameter1: 20,  // the corner has a large radius
+            //fill: $(go.Brush, "Linear", { 0: "rgb(254, 201, 0)", 1: "rgb(254, 162, 0)" }),
+            stroke: null,
+            // portId: "",  // this Shape is the Node's port, not the whole Node
+            // fromLinkable: true, fromLinkableSelfNode: true, fromLinkableDuplicates: true,
+            // toLinkable: true, toLinkableSelfNode: true, toLinkableDuplicates: true,
+            // cursor: "pointer"
+          },new go.Binding("fill","isInit",function(s){
+              return s?
+              $(go.Brush, "Radial",{ 0: "rgb(151,255,151)", 0.8: "rgb(151,255,151)", 1: "rgba(151,255,151, 0)" }):
+              $(go.Brush, "Radial",{ 0: "rgb(255,255,224)", 0.8: "rgb(255,255,224)", 1: "rgba(255,255,224, 0)" })})//.makeTwoWay()
+          ),
+        $(go.TextBlock,
+          {
+            font: "bold 20pt helvetica, bold arial, sans-serif",
+            editable: true  // editing the text automatically updates the model data
+          },
+          new go.Binding("text").makeTwoWay()),
+          {
+            portId: "",  // this Shape is the Node's port, not the whole Node
+            fromLinkable: true, fromLinkableSelfNode: true, fromLinkableDuplicates: true,
+            toLinkable: true, toLinkableSelfNode: true, toLinkableDuplicates: true,
+            cursor: "pointer"
+          }
+      );
+    myDiagram.linkTemplate =
+      $(go.Link,  // the whole link panel
+        {
+          curve: go.Link.Bezier, adjusting: go.Link.Stretch,
+          reshapable: true, relinkableFrom: true, relinkableTo: true,
+          toShortLength: 3,
+        },
+        new go.Binding("points").makeTwoWay(),
+        new go.Binding("curviness"),
+        $(go.Shape,  // the link shape
+          { strokeWidth: 1.5 }),
+        $(go.Shape,  // the arrowhead
+          { toArrow: "standard", fill: 'black', stroke: 'black', strokeWidth: 2}),
+        $(go.Panel, "Auto",
+          $(go.Shape, // the label background, which becomes transparent around the edges
+            {
+              fill: $(go.Brush, "Radial",
+                      { 0: "rgb(240, 240, 240)", 0.3: "rgb(240, 240, 240)", 1: "rgba(240, 240, 240, 0)" }),
+              stroke: null
+            }),
+          $(go.TextBlock,  "event",// the label text
+            {
+              textAlign: "center",
+              font: "20pt helvetica, arial, sans-serif",
+              margin: 10,
+              editable: true,  // enable in-place editing
+            },
+            // editing the text automatically updates the model data
+            new go.Binding("text").makeTwoWay())
+        )
+      );
+
+      
+    //   setTimeout(function(){
+    //       let modelAsText = myDiagram.model.toJson();
+    //       myDiagram.model = go.Model.fromJson(modelAsText);
+    //   },10000);
+
+    
+
+        let tsTemplate = `
+        
+const {ccclass, property} = cc._decorator;
+interface StateNameInterface{
+    #stateNameInterface#
+}
+interface EventNameInterface{
+    #eventNameInterface#
+}
+import StateMachine from "./StateMachine"
+abstract class Fsm extends cc.Component {
+
+    private fsm:any;
+
+    public fsmStartUp(){
+        this.fsm = StateMachine.create(#fsmConfig#,this);
+    };
+
+    public fsmTrigger(eventName:string,...args:any[]){
+       this.fsm[eventName](...args);
+    };
+
+    public fsmIs(stateName:string):boolean{
+        return this.fsm.is(stateName);
+    };
+
+    public fsmCan(eventName:string):boolean{
+        return this.fsm.can(eventName);
+    };
+
+    public fsmCannot(eventName:string):boolean{
+        return this.fsm.cannot(eventName);
+    };
+
+    public fsmCurrent():string{
+        return this.fsm.current;
+    };
+
+    public readonly fsmStateName:StateNameInterface = {
+        #stateNameConfig#
+    };
+
+    public readonly  fsmEventName:EventNameInterface = {
+        #eventNameConfig#
+    };
+
+    #callbacksConfig#
+
+    #triggersConfig#
+}
+
+@ccclass
+export class #className# extends Fsm {
+    
+    // tips-1 : if you want to delegate callback as cc.Component.EventHandler, 
+    //          modify callback as follow. 
+    // @property(cc.Component.EventHandler)
+    // public callbackName : cc.Component.EventHandler = new cc.Component.EventHandler();
+    // 
+    // tips-2 : use this.fsmStartUp() to init fsm.
+    //          use this.eventNameXXX("foo-arg","bar-arg"),
+    //          or this.fsmTrigger(this.fsmEventName.XXX,"foo-arg","bar-arg") to emit event.
+    // public onLoad(){
+    //    this.fsmStartUp();
+    //    this.eventNameXXX("hello","world");
+    //    this.fsmTrigger(this.fsmEventName.XXX,"hello","world");
+    // }
+    
+    #callbacksImplementConfig#
+}
+    `;
+
+    function classNameInput(flowCallback){
+        notie.removeAll();
+        notie.input({
+        text: "enter a className ?",
+        submitText: "confirm", // optional, default = 'Submit'
+        cancelText: "cancel", // optional, default = 'Cancel'
+        position: "top", // optional, default = 'top', enum: ['top', 'bottom']
+        submitCallback: function(value){flowCallback(value)}, // optional
+        cancelCallback: function(){}, // optional
+        autofocus: 'true', // default: 'true'
+        placeholder: 'FsmImplClass', // default: ''
+        type: 'text', // default: 'text'
+        })
+    }
+
+    function exportSelect(){
+        notie.removeAll();
+        notie.select({
+            text:"export which one ?",
+            cancelText: "cancel",
+            choices: [
+                {
+                    type:1,
+                    text:"StateMachine.ts",
+                    handler:function(){save("exportLib")}
+                },
+                {
+                    type:1,
+                    text:"FsmImplClass.ts",
+                    handler:function(){classNameInput(function(className){save("exportFsmTs",className)})}
+                },
+                {
+                    type:1,
+                    text:"FlowForGojs.json",
+                    handler:function(){save("exportGoJs")}
+                },
+                {
+                    type:1,
+                    text:"all",
+                    handler:function(){classNameInput(function(className){save("all",className)})}
+                }
+            ]
+        });
+    }
+
+    function save(exportType,className){
+            className = className && !!className.length ? className : "FsmImplClass";
+        if(exportType === "exportLib"){
+            var stateMachineTsFile = new File([stateMachineTs], "StateMachine.ts", {type: "text/plain;charset=utf-8"});
+            saveAs(stateMachineTsFile);
+            return;
+        }else if(exportType === "all"){
+            var stateMachineTsFile = new File([stateMachineTs], "StateMachine.ts", {type: "text/plain;charset=utf-8"});
+            saveAs(stateMachineTsFile);
+        }
+
+        safetySaveBeforeExport();
+        let modelAsText = myDiagram.model.toJson();
+        let modelAsObj = JSON.parse(modelAsText);
+        let nodeDataArray = modelAsObj.nodeDataArray;
+        let linkDataArray = modelAsObj.linkDataArray;
+
+        modelAsObj.globalCallbacksText = globalCallbacksText;
+
+        let keyToNodeDataArray = [];
+        let initial = "";
+        let events = [];
+        let callbacks = {};
+
+        let stateNameInterface = [];
+        let eventNameInterface = [];
+        let eventNameConfig = [];
+        let stateNameConfig = [];
+        let callbacksConfig = [];
+        let triggersConfig = [];
+        let uniqueCallbacksArray = [];
+        let callbacksImplementConfig = [];
+        for(let i = 0, l = nodeDataArray.length; i < l; i++) {
+            keyToNodeDataArray[nodeDataArray[i].key] = nodeDataArray[i];
+            if(nodeDataArray[i].isInit){
+                initial = nodeDataArray[i].text;
+            }
+            let stateName = nodeDataArray[i].text;
+            let localPreCallbacks = JSON.parse(nodeDataArray[i].callbacks).enter;
+            if(!!localPreCallbacks.length){
+                let localPreCallbacksDecorators = localPreCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
+                callbacks[`onenter${stateName}`] = localPreCallbacksDecorators;
+            }
+            let localPostCallbacks = JSON.parse(nodeDataArray[i].callbacks).leave;
+            if(!!localPostCallbacks.length){
+                let localPostCallbacksDecorators = localPostCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
+                callbacks[`onleave${stateName}`] = localPostCallbacksDecorators;
+            }
+
+            stateNameInterface.push(`${stateName}:string`);
+            stateNameConfig.push(`${stateName}:"${stateName}"`);
+            for(let i = 0,l = localPreCallbacks.length; i < l; i++){
+                let callbackName = localPreCallbacks[i];
+                uniqueCallbacksArray[callbackName] = true;
+                //callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[])`);
+            }
+            for(let i = 0,l = localPostCallbacks.length; i < l; i++){
+                let callbackName = localPostCallbacks[i];
+                uniqueCallbacksArray[callbackName] = true;
+                //callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[])`);
+            }
+        }
+
+        for(let i = 0,l = linkDataArray.length; i < l; i++) {
+            let name = linkDataArray[i].text || "event";
+            let from = keyToNodeDataArray[linkDataArray[i].from].text;
+            let to = keyToNodeDataArray[linkDataArray[i].to].text;
+            events.push({name,from,to});
+            let eventName = name;
+            let localPreCallbacks = JSON.parse(linkDataArray[i].callbacks).before;
+            if(!!localPreCallbacks.length){
+                let localPreCallbacksDecorators = localPreCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
+                callbacks[`onbefore${eventName}`] = localPreCallbacksDecorators;
+            }
+            let localPostCallbacks = JSON.parse(linkDataArray[i].callbacks).after;
+            if(!!localPostCallbacks.length){
+                let localPostCallbacksDecorators = localPostCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
+                callbacks[`onafter${eventName}`] = localPostCallbacksDecorators;
+            }
+
+            eventNameInterface.push(`${eventName}:string`);
+            eventNameConfig.push(`${eventName}:"${eventName}"`);
+            triggersConfig.push(`public ${eventName}(...args:any[]): void {this.fsm["${eventName}"](...args);}`);
+            for(let i = 0,l = localPreCallbacks.length; i < l; i++){
+                let callbackName = localPreCallbacks[i];
+                uniqueCallbacksArray[callbackName] = true;
+                //callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[])`);
+            }
+            for(let i = 0,l = localPostCallbacks.length; i < l; i++){
+                let callbackName = localPostCallbacks[i];
+                uniqueCallbacksArray[callbackName] = true;
+                //callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[])`);
+            }
+        }
+
+        
+
+        let globalCallbacksObj = JSON.parse(globalCallbacksText);
+        let globalEnterCallbacks = globalCallbacksObj.enter;
+        let globalLeaveCallbacks = globalCallbacksObj.leave;
+        let globalBeforeCallbacks = globalCallbacksObj.before;
+        let globalAfterCallbacks = globalCallbacksObj.after;
+        if(!!globalEnterCallbacks.length){
+                let globalEnterCallbacksDecorators = globalEnterCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
+                callbacks[`onenterstate`] = globalEnterCallbacksDecorators;
+        }
+        if(!!globalLeaveCallbacks.length){
+                let globalLeaveCallbacksDecorators = globalLeaveCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
+                callbacks[`onleavestate`] = globalLeaveCallbacksDecorators;
+        }
+        if(!!globalBeforeCallbacks.length){
+                let globalBeforeCallbacksDecorators = globalBeforeCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
+                callbacks[`onbeforeevent`] = globalBeforeCallbacksDecorators;
+        }
+        if(!!globalAfterCallbacks.length){
+                let globalAfterCallbacksDecorators = globalAfterCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
+                callbacks[`onafterevent`] = globalAfterCallbacksDecorators;
+        }
+        for(let i = 0,l = globalEnterCallbacks.length; i < l; i++){
+                let callbackName = globalEnterCallbacks[i];
+                uniqueCallbacksArray[callbackName] = true;
+                //callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[])`);
+        }
+        for(let i = 0,l = globalLeaveCallbacks.length; i < l; i++){
+                let callbackName = globalLeaveCallbacks[i];
+                uniqueCallbacksArray[callbackName] = true;
+                //callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[])`);
+        }
+        for(let i = 0,l = globalBeforeCallbacks.length; i < l; i++){
+                let callbackName = globalBeforeCallbacks[i];
+                uniqueCallbacksArray[callbackName] = true;
+                //callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[])`);
+        }
+        for(let i = 0,l = globalAfterCallbacks.length; i < l; i++){
+                let callbackName = globalAfterCallbacks[i];
+                uniqueCallbacksArray[callbackName] = true;
+                //callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[])`);
+        }
+
+        let uniqueCallbacksIdxArray = Object.keys(uniqueCallbacksArray);
+        for(let i = 0,l = uniqueCallbacksIdxArray.length; i < l; i++) {
+            let callbackName = uniqueCallbacksIdxArray[i];
+            callbacksConfig.push(`protected abstract ${callbackName}: ((eventName:string,from:string,to:string,...args:any[]) => void) | cc.Component.EventHandler`);
+            callbacksImplementConfig.push(`protected ${callbackName}(eventName:string,from:string,to:string,...args:any[]): void {}`);
+
+        }
+        
+
+        let fsmConfig = {
+            initial,
+            events,
+            callbacks
+        }
+
+        //let dist = {};
+        //dist.flowForFsm = fsmConfig;
+        //dist.flowForGoJs = JSON.parse(myDiagram.model.toJson());
+        //console.log(dist);
+        //editKey = null;
+        //selectLink = false;
+        //editor.setText(JSON.stringify(dist));
+        //editor.setMode("code");
+        //editor.expandAll();
+        var fsmConfigDecorator = JSON.stringify(fsmConfig).replace(/"#/g,"").replace(/#"/g,"");
+        //var flowForFsm = new File([fsmConfigDecorator], "flowForFsm.json", {type: "text/plain;charset=utf-8"});
+        //saveAs(flowForFsm);
+
+        //var flowForGoJs = new File([myDiagram.model.toJson()], "flowForGoJs.json", {type: "text/plain;charset=utf-8"});
+        //saveAs(flowForGoJs);
+        if(exportType === "exportGoJs"){
+            //var flowForGoJsFile = new File([myDiagram.model.toJson()], "flow-for-gojs.json", {type: "text/plain;charset=utf-8"});
+            var flowForGoJsFile = new File([JSON.stringify(modelAsObj)], "FlowForGojs.json", {type: "text/plain;charset=utf-8"});
+            saveAs(flowForGoJsFile);
+            return;
+        }else if(exportType === "all"){
+            //var flowForGoJsFile = new File([myDiagram.model.toJson()], "flow-for-gojs.json", {type: "text/plain;charset=utf-8"});
+            var flowForGoJsFile = new File([JSON.stringify(modelAsObj)], "FlowForGojs.json", {type: "text/plain;charset=utf-8"});
+            saveAs(flowForGoJsFile);
+        }
+
+        
+        
+        //console.log(fsmConfigDecorator);
+        let tsString = tsTemplate.replace(/#fsmConfig#/g,fsmConfigDecorator)
+                                 .replace(/#stateNameConfig#/g,stateNameConfig.join(",\n    "))
+                                 .replace(/#eventNameConfig#/g,eventNameConfig.join(",\n    "))
+                                 .replace(/#stateNameInterface#/g,stateNameInterface.join(";\n    ") + ";\n")
+                                 .replace(/#eventNameInterface#/g,eventNameInterface.join(";\n    ") + ";\n")
+                                 .replace(/#callbacksConfig#/g,callbacksConfig.join(";\n    ") + ";\n")
+                                 .replace(/#triggersConfig#/g,triggersConfig.join(";\n     ") + ";\n")
+                                 .replace(/#className#/g,className)
+                                 .replace(/#callbacksImplementConfig#/g,callbacksImplementConfig.join(";\n    ") + ";\n")
+        //console.log(tsString);
+        if(exportType === "exportFsmTs" || exportType === "all"){
+            var fsmFile = new File([tsString], `${className}.ts`, {type: "text/plain;charset=utf-8"});
+            saveAs(fsmFile);
+        }
+    }
+
+
+
+
+
+    function fsmCallbacksDecorator(rawCallback){
+        return `#this.${rawCallback}#`
+    }
+
+    function filterForEmptyString(rawCallback){
+        if(rawCallback === null ||rawCallback.length === 0){
+            return false;
+        }
+            return true;
+    }
+
+    function safetySaveBeforeExport(){
+        if(editKey){  
+          let node = myDiagram.findNodeForKey(editKey);
+          if(node){
+            myDiagram.model.startTransaction("change callbacks");
+            myDiagram.model.setDataProperty(node.data, "callbacks", editor.getText());
+            myDiagram.model.commitTransaction("change callbacks");
+          }
+        }
+        if(selectLink){
+            let link = myDiagram.findLinkForData(linkData);
+            if(link){
+                 myDiagram.model.startTransaction("change callbacks");
+                myDiagram.model.setDataProperty(link.data, "callbacks", editor.getText());
+                myDiagram.model.commitTransaction("change callbacks");
+            }
+        }
+    }
+
+    let myDiagramDivDom = document.getElementById("myDiagramDiv");
+    myDiagramDivDom.addEventListener("dragleave", function(e){  
+        myDiagramDivDom.style.backgroundColor = '#E6E6E6';  
+    }, false);  
+    myDiagramDivDom.addEventListener("dragenter", function(e){  
+        myDiagramDivDom.style.backgroundColor = 'white';
+        e.stopPropagation();  
+        e.preventDefault();  
+    }, false);  
+    myDiagramDivDom.addEventListener("dragover", function(e){  
+        e.stopPropagation();  
+        e.preventDefault();  
+    }, false);  
+    myDiagramDivDom.addEventListener("drop", function(e){  
+        myDiagramDivDom.style.backgroundColor = '#E6E6E6';  
+        e.stopPropagation();  
+        e.preventDefault();  
+        
+        handleFiles(e.dataTransfer.files);  
+        
+        //submit.disabled = false;  
+    }, false);
+
+    let handleFiles = function(files) {
+        let l = 1;  
+        for (var i = 0; i < l; i++) {  
+            var file = files[i];  
+            var reader = new FileReader();
+                        
+                reader.onload = function(e) {
+                            //console.log(reader.result);
+                            let flowForGoJs = JSON.parse(reader.result);
+                            globalCallbacksText = flowForGoJs.globalCallbacksText;
+                            editor.setText(globalCallbacksText);
+                            expandJson();
+                            if(flowForGoJs){
+                                myDiagram.model = go.Model.fromJson(flowForGoJs);
+                            }else{
+                                notie.alert({type:"error",text:"JSON.parse FlowForGojs failure",stay:true});
+                            }
+                };
+                        
+                reader.readAsText(file);
+        }  
+    }  
+
+    let helpText = 
+    [`alt + q : switch link mode and norm mode, you can link state in link mode.`,
+    `double click : create state.`,
+
+    `alt + c : select initial state.`,
+
+    `json editor : add callbacks for state or event, 
+                    enter array and leave array for state callbacks, 
+                    before array and after array for event callbacks, 
+                    array item should be string as func name.`,
+
+      `alt + s : export file.`,
+      `StateMachine.ts : lib of fsm, FsmImplClass.ts would import this file automatically.`,
+
+      `FsmImplClass.ts : fsm typescript class, this file would cover all the detail of fsm.`,
+
+      `FlowForGojs.json : dump file for gojs, 
+                           you can drag this file into this page from disk to recovery work any time you want.`,
+
+      `other short key for gojs : see http://gojs.net/latest/api/index.html and search for Keyboard Shortcuts.`,
+
+      `other short key for json editor : see https://github.com/josdejong/jsoneditor/blob/master/docs/shortcut_keys.md`,
+
+      `use FsmImplClass.ts : in sub class extends Fsm,
+                    do something in empty callback, 
+                    use this.fsmStartUp() to init fsm, 
+                    use this.eventNameXXX("foo-arg","bar-arg") or this.fsmTrigger(this.fsmEventName.XXX,"foo-arg","bar-arg") to emit event.`];
+
+    let tipsI = 0;
+    let tipsL = helpText.length;
+    let generateTipsConfirm = function(idx){
+        notie.removeAll();
+        notie.confirm({
+        text: helpText[idx],
+        submitText: "prev", // optional, default = 'Yes'
+        cancelText: "next", // optional, default = 'Cancel'
+        position: "top", // optional, default = 'top', enum: ['top', 'bottom']
+        submitCallback: function(){generateTipsConfirm((--tipsI)%tipsL)}, // optional
+        cancelCallback: function(){generateTipsConfirm((++tipsI)%tipsL)}, // optional
+        });
+    }
+
+
+
+    let getHelp = function(){
+            generateTipsConfirm(tipsI%tipsL);
+    }
+
+    let stateMachineTs = `
+
+interface ResultInterface {
+  SUCCEEDED: number;
+  NOTRANSITION: number;
+  CANCELLED: number;
+  PENDING: number;
+}
+
+interface ErrorInterface {
+  INVALID_TRANSITION: number;
+  PENDING_TRANSITION: number;
+  INVALID_CALLBACK: number;
+}
+
+
+export default class StateMachine {
+
+  //---------------------------------------------------------------------------
+
+  private static VERSION: string = "2.4.0";
+
+  //---------------------------------------------------------------------------
+
+  private static readonly Result: ResultInterface = {
+    SUCCEEDED: 1, // the event transitioned successfully from one state to another
+    NOTRANSITION: 2, // the event was successfull but no state transition was necessary
+    CANCELLED: 3, // the event was cancelled by the caller in a beforeEvent callback
+    PENDING: 4  // the event is asynchronous and the caller is in control of when the transition occurs
+  };
+
+  private static readonly Error: ErrorInterface = {
+    INVALID_TRANSITION: 100, // caller tried to fire an event that was innapropriate in the current state
+    PENDING_TRANSITION: 200, // caller tried to fire an event while an async transition was still pending
+    INVALID_CALLBACK: 300 // caller provided callback function threw an exception
+  };
+
+  private static readonly WILDCARD: string = '*';
+  private static readonly ASYNC: string = 'async';
+
+  //---------------------------------------------------------------------------
+
+  public static create(cfg:any, target: any){
+
+    let initial = (typeof cfg.initial == 'string') ? { state: cfg.initial } : cfg.initial; // allow for a simple string, or an object with { state: 'foo', event: 'setup', defer: true|false }
+    let terminal = cfg.terminal || cfg['final'];
+    let fsm = target;
+    let events = cfg.events || [];
+    let callbacks = cfg.callbacks || {};
+    let map = {}; // track state transitions allowed for an event { event: { from: [ to ] } }
+    let transitions = {}; // track events allowed from a state            { state: [ event ] }
+
+    let add = function (e) {
+      let from = Array.isArray(e.from) ? e.from : (e.from ? [e.from] : [StateMachine.WILDCARD]); // allow 'wildcard' transition if 'from' is not specified
+      map[e.name] = map[e.name] || {};
+      for (let n = 0; n < from.length; n++) {
+        transitions[from[n]] = transitions[from[n]] || [];
+        transitions[from[n]].push(e.name);
+
+        map[e.name][from[n]] = e.to || from[n]; // allow no-op transition if 'to' is not specified
+      }
+      if (e.to)
+        transitions[e.to] = transitions[e.to] || [];
+    };
+
+    if (initial) {
+        initial.event = initial.event || 'startup';
+      add({ name: initial.event, from: 'none', to: initial.state });
+    }
+
+    for (let n = 0; n < events.length; n++)
+      add(events[n]);
+
+    for (let name in map) {
+      if (map.hasOwnProperty(name))
+        fsm[name] = StateMachine.buildEvent(name, map[name]);
+    }
+
+    for (let name in callbacks) {
+      if (callbacks.hasOwnProperty(name))
+        fsm[name] = callbacks[name]
+    }
+
+    fsm.current = 'none';
+    fsm.is = function (state) { return Array.isArray(state) ? (state.indexOf(this.current) >= 0) : (this.current === state); };
+    fsm.can = function (event) { return !this.transition && (map[event] !== undefined) && (map[event].hasOwnProperty(this.current) || map[event].hasOwnProperty(StateMachine.WILDCARD)); }
+    fsm.cannot = function (event) { return !this.can(event); };
+    fsm.transitions = function () { return (transitions[this.current] || []).concat(transitions[StateMachine.WILDCARD] || []); };
+    fsm.isFinished = function () { return this.is(terminal); };
+    fsm.error = cfg.error || function (name, from, to, args, error, msg, e) { throw e || msg; }; // default behavior when something unexpected happens is to throw an exception, but caller can override this behavior if desired (see github issue #3 and #17)
+    fsm.states = function () { return Object.keys(transitions).sort() };
+
+    if (initial && !initial.defer)
+      fsm[initial.event]();
+
+    return fsm;
+
+  };
+
+  //===========================================================================
+
+  private static doCallback(fsm, func, name, from, to, args) {
+    if (func) {
+      try {
+        if (Array.isArray(func)) {
+          for (let i = 0, l = func.length; i < l; i++) {
+            if(func[i] instanceof cc.Component.EventHandler) {
+                let target = func[i].target.getComponent(func[i].component);
+                    args[args.length] = func[i].customEventData;
+                target[func[i].handler].apply(target, [name, from, to].concat(args));
+            }else{
+                func[i].apply(fsm, [name, from, to].concat(args));
+            }
+          }
+          return true;
+        } else {
+          func.apply(fsm, [name, from, to].concat(args));
+          return true;
+        }
+      }
+      catch (e) {
+        fsm.error(name, from, to, args, StateMachine.Error.INVALID_CALLBACK, "an exception occurred in a caller-provided callback function", e);
+        return true;
+      }
+    }
+  };
+
+  private static beforeAnyEvent(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onbeforeevent'], name, from, to, args); };
+  private static afterAnyEvent(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onafterevent'] || fsm['onevent'], name, from, to, args); };
+  private static leaveAnyState(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onleavestate'], name, from, to, args); };
+  private static enterAnyState(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onenterstate'] || fsm['onstate'], name, from, to, args); };
+  private static changeState(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onchangestate'], name, from, to, args); };
+
+  private static beforeThisEvent(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onbefore' + name], name, from, to, args); };
+  private static afterThisEvent(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onafter' + name] || fsm['on' + name], name, from, to, args); };
+  private static leaveThisState(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onleave' + from], name, from, to, args); };
+  private static enterThisState(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onenter' + to] || fsm['on' + to], name, from, to, args); };
+
+  private static beforeEvent(fsm, name, from, to, args) {
+    if ((false === StateMachine.beforeThisEvent(fsm, name, from, to, args)) ||
+      (false === StateMachine.beforeAnyEvent(fsm, name, from, to, args)))
+      return false;
+  };
+
+  private static afterEvent(fsm, name, from, to, args) {
+    StateMachine.afterThisEvent(fsm, name, from, to, args);
+    StateMachine.afterAnyEvent(fsm, name, from, to, args);
+  };
+
+  private static leaveState(fsm, name, from, to, args) {
+    let specific = StateMachine.leaveThisState(fsm, name, from, to, args),
+      general = StateMachine.leaveAnyState(fsm, name, from, to, args);
+    if ((false === specific) || (false === general))
+      return false;
+    else if ((typeof StateMachine.ASYNC === typeof specific) || (typeof StateMachine.ASYNC === typeof general))
+      return StateMachine.ASYNC;
+  };
+
+  private static enterState(fsm, name, from, to, args) {
+    StateMachine.enterThisState(fsm, name, from, to, args);
+    StateMachine.enterAnyState(fsm, name, from, to, args);
+  };
+
+  //===========================================================================
+
+  private static buildEvent(name, map) {
+    return function () {
+
+      let from = this.current;
+      let to = map[from] || (map[StateMachine.WILDCARD] != StateMachine.WILDCARD ? map[StateMachine.WILDCARD] : from) || from;
+      let args = Array.prototype.slice.call(arguments); // turn arguments into pure array
+
+      if (this.transition)
+        return this.error(name, from, to, args, StateMachine.Error.PENDING_TRANSITION, "event " + name + " inappropriate because previous transition did not complete");
+
+      if (this.cannot(name))
+        return this.error(name, from, to, args, StateMachine.Error.INVALID_TRANSITION, "event " + name + " inappropriate in current state " + this.current);
+
+      if (false === StateMachine.beforeEvent(this, name, from, to, args))
+        return StateMachine.Result.CANCELLED;
+
+      if (from === to) {
+        StateMachine.afterEvent(this, name, from, to, args);
+        return StateMachine.Result.NOTRANSITION;
+      }
+
+      // prepare a transition method for use EITHER lower down, or by caller if they want an async transition (indicated by an ASYNC return value from leaveState)
+      let fsm = this;
+      this.transition = function () {
+        fsm.transition = null; // this method should only ever be called once
+        fsm.current = to;
+        StateMachine.enterState(fsm, name, from, to, args);
+        StateMachine.changeState(fsm, name, from, to, args);
+        StateMachine.afterEvent(fsm, name, from, to, args);
+        return StateMachine.Result.SUCCEEDED;
+      };
+      this.transition.cancel = function () { // provide a way for caller to cancel async transition if desired (issue #22)
+        fsm.transition = null;
+        StateMachine.afterEvent(fsm, name, from, to, args);
+      }
+
+      let leave = StateMachine.leaveState(this, name, from, to, args);
+      if (false === leave) {
+        this.transition = null;
+        return StateMachine.Result.CANCELLED;
+      }
+      else if (StateMachine.ASYNC === leave) {
+        return StateMachine.Result.PENDING;
+      }
+      else {
+        if (this.transition) // need to check in case user manually called transition() but forgot to return StateMachine.ASYNC
+          return this.transition();
+      }
+
+    };
+  }
+
+};
+    
+    `
+
+
+</script>
+</body>
+
+</html>
