@@ -493,7 +493,7 @@ export class #className# extends Fsm {
         for(let i = 0,l = uniqueCallbacksIdxArray.length; i < l; i++) {
             let callbackName = uniqueCallbacksIdxArray[i];
             callbacksConfig.push(`protected abstract ${callbackName}: ((eventName:string,from:string,to:string,...args:any[]) => void) | cc.Component.EventHandler`);
-            callbacksImplementConfig.push(`protected ${callbackName}(eventName:string,from:string,to:string,...args:any[]): void {}`);
+            callbacksImplementConfig.push(`protected ${callbackName} = (eventName:string,from:string,to:string,...args:any[]): void => {}`);
 
         }
         
