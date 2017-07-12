@@ -234,74 +234,55 @@
     
 
         let tsTemplate = `
-        
-const {ccclass, property} = cc._decorator;
+//#gojsConfig#
 interface StateNameInterface{
     #stateNameInterface#
 }
 interface EventNameInterface{
     #eventNameInterface#
 }
-import StateMachine from "./StateMachine"
-abstract class Fsm extends cc.Component {
+import StateMachine from "../libs/StateMachine";
+import {AbstractComponent} from "../views/AbstractComponent";
+import {AbstractModel} from "../models/AbstractModel";
+import {AbstractController} from "../controllers/AbstractController";
+export abstract class #className#  extends cc.Component  {
 
     private fsm:any;
 
-    public fsmStartUp(){
-        this.fsm = StateMachine.create(#fsmConfig#,this);
+    protected fsmTrigger(eventName:string,...args:any[]){
+        this.fsm[eventName](...args);
     };
 
-    public fsmTrigger(eventName:string,...args:any[]){
-       this.fsm[eventName](...args);
-    };
-
-    public fsmIs(stateName:string):boolean{
+    protected fsmIs(stateName:string):boolean {
         return this.fsm.is(stateName);
     };
 
-    public fsmCan(eventName:string):boolean{
+    protected fsmCan(eventName:string):boolean {
         return this.fsm.can(eventName);
     };
 
-    public fsmCannot(eventName:string):boolean{
+    protected fsmCannot(eventName:string):boolean{
         return this.fsm.cannot(eventName);
     };
 
-    public fsmCurrent():string{
+    protected fsmCurrent():string{
         return this.fsm.current;
     };
 
-    public readonly fsmStateName:StateNameInterface = {
+    protected fsmStartUp(){
+        this.fsm = StateMachine.create(#fsmConfig#,this);
+    };
+
+    public readonly stateName:StateNameInterface = {
         #stateNameConfig#
     };
 
-    public readonly  fsmEventName:EventNameInterface = {
+    public readonly eventName:EventNameInterface = {
         #eventNameConfig#
     };
 
-    #callbacksConfig#
-
     #triggersConfig#
-}
-
-@ccclass
-export class #className# extends Fsm {
-    
-    // tips-1 : if you want to delegate callback as cc.Component.EventHandler, 
-    //          modify callback as follow. 
-    // @property(cc.Component.EventHandler)
-    // public callbackName : cc.Component.EventHandler = new cc.Component.EventHandler();
-    // 
-    // tips-2 : use this.fsmStartUp() to init fsm.
-    //          use this.eventNameXXX("foo-arg","bar-arg"),
-    //          or this.fsmTrigger(this.fsmEventName.XXX,"foo-arg","bar-arg") to emit event.
-    // public onLoad(){
-    //    this.fsmStartUp();
-    //    this.eventNameXXX("hello","world");
-    //    this.fsmTrigger(this.fsmEventName.XXX,"hello","world");
-    // }
-    
-    #callbacksImplementConfig#
+    #callbacksConfig#
 }
     `;
 
@@ -336,11 +317,11 @@ export class #className# extends Fsm {
                     text:"FsmImplClass.ts",
                     handler:function(){classNameInput(function(className){save("exportFsmTs",className)})}
                 },
-                {
-                    type:1,
-                    text:"FlowForGojs.json",
-                    handler:function(){save("exportGoJs")}
-                },
+                // {
+                //     type:1,
+                //     text:"FlowForGojs.json",
+                //     handler:function(){save("exportGoJs")}
+                // },
                 {
                     type:1,
                     text:"all",
@@ -375,10 +356,13 @@ export class #className# extends Fsm {
         let callbacks = {};
 
         let stateNameInterface = [];
+        let uniqueStateNameArray = [];
         let eventNameInterface = [];
+        let uniqueEventNameArray = [];
         let eventNameConfig = [];
         let stateNameConfig = [];
         let callbacksConfig = [];
+        //let callbacksInterface = [];
         let triggersConfig = [];
         let uniqueCallbacksArray = [];
         let callbacksImplementConfig = [];
@@ -399,8 +383,10 @@ export class #className# extends Fsm {
                 callbacks[`onleave${stateName}`] = localPostCallbacksDecorators;
             }
 
-            stateNameInterface.push(`${stateName}:string`);
-            stateNameConfig.push(`${stateName}:"${stateName}"`);
+            //stateNameInterface.push(`${stateName}:string`);
+            //stateNameConfig.push(`${stateName}:"${stateName}"`);
+            uniqueStateNameArray[stateName] = true;
+            
             for(let i = 0,l = localPreCallbacks.length; i < l; i++){
                 let callbackName = localPreCallbacks[i];
                 uniqueCallbacksArray[callbackName] = true;
@@ -422,17 +408,27 @@ export class #className# extends Fsm {
             let localPreCallbacks = JSON.parse(linkDataArray[i].callbacks).before;
             if(!!localPreCallbacks.length){
                 let localPreCallbacksDecorators = localPreCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
-                callbacks[`onbefore${eventName}`] = localPreCallbacksDecorators;
+                let callbacksIdxName = `onbefore${eventName}`;
+                if(callbacks[callbacksIdxName] === undefined){
+                    callbacks[callbacksIdxName] = {};
+                }
+                callbacks[callbacksIdxName][from] = localPreCallbacksDecorators;
             }
             let localPostCallbacks = JSON.parse(linkDataArray[i].callbacks).after;
             if(!!localPostCallbacks.length){
                 let localPostCallbacksDecorators = localPostCallbacks.filter(filterForEmptyString).map(fsmCallbacksDecorator);
-                callbacks[`onafter${eventName}`] = localPostCallbacksDecorators;
+                //callbacks[`onafter${eventName}`] = localPostCallbacksDecorators;
+                let callbacksIdxName = `onafter${eventName}`;
+                if(callbacks[callbacksIdxName] === undefined){
+                    callbacks[callbacksIdxName] = {};
+                }
+                callbacks[callbacksIdxName][from] = localPostCallbacksDecorators;
             }
 
-            eventNameInterface.push(`${eventName}:string`);
-            eventNameConfig.push(`${eventName}:"${eventName}"`);
-            triggersConfig.push(`public ${eventName}(...args:any[]): void {this.fsm["${eventName}"](...args);}`);
+            //eventNameInterface.push(`${eventName}:string`);
+            //eventNameConfig.push(`${eventName}:"${eventName}"`);
+            //triggersConfig.push(`public ${eventName}(...args:any[]): void {this.fsm["${eventName}"](...args);}`);
+            uniqueEventNameArray[eventName] = true;
             for(let i = 0,l = localPreCallbacks.length; i < l; i++){
                 let callbackName = localPreCallbacks[i];
                 uniqueCallbacksArray[callbackName] = true;
@@ -492,9 +488,22 @@ export class #className# extends Fsm {
         let uniqueCallbacksIdxArray = Object.keys(uniqueCallbacksArray);
         for(let i = 0,l = uniqueCallbacksIdxArray.length; i < l; i++) {
             let callbackName = uniqueCallbacksIdxArray[i];
-            callbacksConfig.push(`protected abstract ${callbackName}: ((eventName:string,from:string,to:string,...args:any[]) => void) | cc.Component.EventHandler`);
-            callbacksImplementConfig.push(`protected ${callbackName} = (eventName:string,from:string,to:string,...args:any[]): void => {}`);
-
+            callbacksConfig.push(`protected abstract ${callbackName}(eventName:string,from:string,to:string,...args:any[]) : void`);
+            //callbacksInterface.push(`${callbackName}(eventName:string,from:string,to:string,...args:any[]) : void`);
+            //callbacksImplementConfig.push(`protected ${callbackName} = (eventName:string,from:string,to:string,...args:any[]): void => {}`);
+        }
+        let uniqueEventNameIdxArray = Object.keys(uniqueEventNameArray);
+        for(let i = 0,l = uniqueEventNameIdxArray.length; i < l; i++){
+            let eventName = uniqueEventNameIdxArray[i];
+            triggersConfig.push(`protected ${eventName}(...args:any[]): void {this.fsm["${eventName}"](...args);}`);
+            eventNameInterface.push(`${eventName}:string`);
+            eventNameConfig.push(`${eventName}:"${eventName}"`);
+        }
+        let uniqueStateNameIdxArray = Object.keys(uniqueStateNameArray);
+        for(let i = 0,l = uniqueStateNameIdxArray.length; i < l; i++) {
+            let stateName = uniqueStateNameIdxArray[i];
+            stateNameInterface.push(`${stateName}:string`);
+            stateNameConfig.push(`${stateName}:"${stateName}"`);
         }
         
 
@@ -519,16 +528,16 @@ export class #className# extends Fsm {
 
         //var flowForGoJs = new File([myDiagram.model.toJson()], "flowForGoJs.json", {type: "text/plain;charset=utf-8"});
         //saveAs(flowForGoJs);
-        if(exportType === "exportGoJs"){
-            //var flowForGoJsFile = new File([myDiagram.model.toJson()], "flow-for-gojs.json", {type: "text/plain;charset=utf-8"});
-            var flowForGoJsFile = new File([JSON.stringify(modelAsObj)], "FlowForGojs.json", {type: "text/plain;charset=utf-8"});
-            saveAs(flowForGoJsFile);
-            return;
-        }else if(exportType === "all"){
-            //var flowForGoJsFile = new File([myDiagram.model.toJson()], "flow-for-gojs.json", {type: "text/plain;charset=utf-8"});
-            var flowForGoJsFile = new File([JSON.stringify(modelAsObj)], "FlowForGojs.json", {type: "text/plain;charset=utf-8"});
-            saveAs(flowForGoJsFile);
-        }
+        // if(exportType === "exportGoJs"){
+        //     //var flowForGoJsFile = new File([myDiagram.model.toJson()], "flow-for-gojs.json", {type: "text/plain;charset=utf-8"});
+        //     var flowForGoJsFile = new File([JSON.stringify(modelAsObj)], "FlowForGojs.json", {type: "text/plain;charset=utf-8"});
+        //     saveAs(flowForGoJsFile);
+        //     return;
+        // }else if(exportType === "all"){
+        //     //var flowForGoJsFile = new File([myDiagram.model.toJson()], "flow-for-gojs.json", {type: "text/plain;charset=utf-8"});
+        //     var flowForGoJsFile = new File([JSON.stringify(modelAsObj)], "FlowForGojs.json", {type: "text/plain;charset=utf-8"});
+        //     saveAs(flowForGoJsFile);
+        // }
 
         
         
@@ -541,7 +550,9 @@ export class #className# extends Fsm {
                                  .replace(/#callbacksConfig#/g,callbacksConfig.join(";\n    ") + ";\n")
                                  .replace(/#triggersConfig#/g,triggersConfig.join(";\n     ") + ";\n")
                                  .replace(/#className#/g,className)
-                                 .replace(/#callbacksImplementConfig#/g,callbacksImplementConfig.join(";\n    ") + ";\n")
+                                 .replace(/#gojsConfig#/g,"###" + JSON.stringify(modelAsObj) + "###");
+                                 //.replace(/#callbacksImplementConfig#/g,callbacksImplementConfig.join(";\n    ") + ";\n")
+                                 //.replace(/#callbacksInterface#/g,callbacksInterface.join("\n    ") + ";\n");
         //console.log(tsString);
         if(exportType === "exportFsmTs" || exportType === "all"){
             var fsmFile = new File([tsString], `${className}.ts`, {type: "text/plain;charset=utf-8"});
@@ -555,6 +566,7 @@ export class #className# extends Fsm {
 
     function fsmCallbacksDecorator(rawCallback){
         return `#this.${rawCallback}#`
+        //return `#target.${rawCallback}#`
     }
 
     function filterForEmptyString(rawCallback){
@@ -614,7 +626,10 @@ export class #className# extends Fsm {
                         
                 reader.onload = function(e) {
                             //console.log(reader.result);
-                            let flowForGoJs = JSON.parse(reader.result);
+                            //let gojsResult = reader.result.match(/###(.*)###/g)[0];
+                            let gojsResult = /###(.*)###/.exec(reader.result)[1];
+                            let flowForGoJs = JSON.parse(gojsResult);
+                            //let flowForGoJs = JSON.parse(reader.result);
                             globalCallbacksText = flowForGoJs.globalCallbacksText;
                             editor.setText(globalCallbacksText);
                             expandJson();
@@ -757,7 +772,7 @@ export default class StateMachine {
 
     for (let name in callbacks) {
       if (callbacks.hasOwnProperty(name))
-        fsm[name] = callbacks[name]
+        fsm[name] = callbacks[name];
     }
 
     fsm.current = 'none';
@@ -783,17 +798,15 @@ export default class StateMachine {
       try {
         if (Array.isArray(func)) {
           for (let i = 0, l = func.length; i < l; i++) {
-            if(func[i] instanceof cc.Component.EventHandler) {
-                let target = func[i].target.getComponent(func[i].component);
-                    args[args.length] = func[i].customEventData;
-                target[func[i].handler].apply(target, [name, from, to].concat(args));
-            }else{
                 func[i].apply(fsm, [name, from, to].concat(args));
-            }
           }
           return true;
         } else {
-          func.apply(fsm, [name, from, to].concat(args));
+          //func.apply(fsm, [name, from, to].concat(args));
+          //events' cb is an object for same-name event
+          for(let i = 0,l = func[from].length; i < l; i++){
+                func[from][i].apply(fsm, [name, from, to].concat(args));
+          }
           return true;
         }
       }
@@ -802,6 +815,7 @@ export default class StateMachine {
         return true;
       }
     }
+    return true;
   };
 
   private static beforeAnyEvent(fsm, name, from, to, args) { return StateMachine.doCallback(fsm, fsm['onbeforeevent'], name, from, to, args); };
@@ -819,6 +833,7 @@ export default class StateMachine {
     if ((false === StateMachine.beforeThisEvent(fsm, name, from, to, args)) ||
       (false === StateMachine.beforeAnyEvent(fsm, name, from, to, args)))
       return false;
+      return true;
   };
 
   private static afterEvent(fsm, name, from, to, args) {
@@ -833,6 +848,7 @@ export default class StateMachine {
       return false;
     else if ((typeof StateMachine.ASYNC === typeof specific) || (typeof StateMachine.ASYNC === typeof general))
       return StateMachine.ASYNC;
+      return true;
   };
 
   private static enterState(fsm, name, from, to, args) {
@@ -876,7 +892,7 @@ export default class StateMachine {
       this.transition.cancel = function () { // provide a way for caller to cancel async transition if desired (issue #22)
         fsm.transition = null;
         StateMachine.afterEvent(fsm, name, from, to, args);
-      }
+      };
 
       let leave = StateMachine.leaveState(this, name, from, to, args);
       if (false === leave) {
